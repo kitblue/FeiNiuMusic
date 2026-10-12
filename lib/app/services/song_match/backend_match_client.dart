@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 
 import '../companion/companion_error.dart';
 import '../feiniu/api_client.dart';
@@ -57,8 +58,9 @@ class SearchSourceInfo {
       capabilities: (json['capabilities'] as List? ?? const [])
           .map((e) => e.toString())
           .toList(),
-      searchTypes: (json['searchTypes'] as Map? ?? const {})
-          .map((k, v) => MapEntry(k.toString(), (v as num?)?.toInt() ?? 0)),
+      searchTypes: (json['searchTypes'] as Map? ?? const {}).map(
+        (k, v) => MapEntry(k.toString(), (v as num?)?.toInt() ?? 0),
+      ),
       defaultSearchType: (json['defaultSearchType'] as num?)?.toInt() ?? 0,
       config: (json['config'] as Map?)?.cast<String, dynamic>() ?? const {},
     );
@@ -198,7 +200,7 @@ class BackendMatchClient {
       '/music/api/v1/match/refresh-album-covers';
   static const String _playlistImportPath = '/music/api/v1/playlist/import';
 
-  final Dio _dio = Dio(
+  Dio _dio = Dio(
     BaseOptions(
       connectTimeout: const Duration(seconds: 10),
       sendTimeout: const Duration(seconds: 30),
@@ -207,6 +209,9 @@ class BackendMatchClient {
       validateStatus: (code) => code != null && code < 500,
     ),
   );
+
+  @visibleForTesting
+  void setDioForTest(Dio dio) => _dio = dio;
 
   /// 当前是否可用（已配置服务地址 + 已登录）。
   bool get available {
@@ -291,17 +296,15 @@ class BackendMatchClient {
       final pluginName = g['pluginName']?.toString() ?? '';
       final items = g['items'];
       if (pluginId.isEmpty || items is! List) continue;
-      final results = parseSongResults(
-        jsonEncode(items),
-        pluginId,
-        pluginName,
-      );
+      final results = parseSongResults(jsonEncode(items), pluginId, pluginName);
       if (results.isEmpty) continue;
-      groups.add(SourceGroup(
-        pluginId: pluginId,
-        pluginName: pluginName,
-        results: results,
-      ));
+      groups.add(
+        SourceGroup(
+          pluginId: pluginId,
+          pluginName: pluginName,
+          results: results,
+        ),
+      );
     }
     return GroupedSongResults(groups: groups);
   }
@@ -411,8 +414,9 @@ class BackendMatchClient {
       original: parseStructuredLines(payload['original']),
       translated: parseStructuredLines(payload['translated']),
       romanization: parseStructuredLines(payload['romanization']),
-      tags: (payload['tags'] as Map? ?? const {})
-          .map((k, v) => MapEntry(k.toString(), v?.toString() ?? '')),
+      tags: (payload['tags'] as Map? ?? const {}).map(
+        (k, v) => MapEntry(k.toString(), v?.toString() ?? ''),
+      ),
     );
     return result.hasLyrics ? result : null;
   }
@@ -447,6 +451,9 @@ class BackendMatchClient {
         },
         options: Options(
           headers: {..._authHeaders(), 'Content-Type': 'application/json'},
+          // 多选匹配同样逐首处理，等待完整批次结果。
+          sendTimeout: const Duration(minutes: 1),
+          receiveTimeout: const Duration(minutes: 10),
         ),
       );
       data = response.data ?? const {};
@@ -457,13 +464,25 @@ class BackendMatchClient {
       throw Exception(data['msg'] as String? ?? '批量匹配失败');
     }
     final payload = data['data'];
-    if (payload is! Map<String, dynamic>) return const [];
+    if (payload is! Map<String, dynamic>) {
+      throw const FormatException('批量匹配响应缺少 data，结果未确认');
+    }
     final results = payload['results'];
-    if (results is! List) return const [];
-    return results
+    if (results is! List) {
+      throw const FormatException('批量匹配响应缺少 results，结果未确认');
+    }
+    final parsed = results
         .whereType<Map>()
         .map((e) => BatchMatchResult.fromJson(e.cast<String, dynamic>()))
         .toList();
+    final expectedGuids = songs.map((song) => song['guid']?.toString()).toSet();
+    final returnedGuids = parsed.map((result) => result.guid).toSet();
+    if (parsed.length != songs.length ||
+        !expectedGuids.containsAll(returnedGuids) ||
+        !returnedGuids.containsAll(expectedGuids)) {
+      throw const FormatException('批量匹配结果不完整，结果未确认');
+    }
+    return parsed;
   }
 
   /// 批量刷新通用请求。
@@ -515,18 +534,14 @@ class BackendMatchClient {
   }
 
   /// 批量刷新所有歌手图片（高危：遍历歌手搜索封面+新 guid 删旧）。
-  Future<RefreshBatchResult> refreshArtistCovers({
-    List<String>? sources,
-  }) {
+  Future<RefreshBatchResult> refreshArtistCovers({List<String>? sources}) {
     return _refresh(_matchRefreshArtistCoversPath, {
       if (sources != null) 'sources': sources,
     });
   }
 
   /// 批量刷新所有专辑图片（高危：遍历专辑搜索封面+新 guid 删旧）。
-  Future<RefreshBatchResult> refreshAlbumCovers({
-    List<String>? sources,
-  }) {
+  Future<RefreshBatchResult> refreshAlbumCovers({List<String>? sources}) {
     return _refresh(_matchRefreshAlbumCoversPath, {
       if (sources != null) 'sources': sources,
     });

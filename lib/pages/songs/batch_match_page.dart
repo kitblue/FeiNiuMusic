@@ -7,6 +7,7 @@ import '../../app/services/song_match/song_match_service.dart';
 import '../../app/state/settings_match.dart';
 import '../../app/state/song_state.dart';
 import '../../components/index.dart';
+import 'batch_match_summary.dart';
 
 /// 批量匹配数据页。
 ///
@@ -65,8 +66,9 @@ class _BatchMatchPageState extends State<BatchMatchPage> {
 
     // 服务端全自动处理：搜索取首个候选并写入歌手/歌词/专辑/封面。
     final wants = _fields.map((f) => f.name).toList();
-    final writeMode =
-        _writeMode == MatchWriteMode.overwrite ? 'overwrite' : 'fill';
+    final writeMode = _writeMode == MatchWriteMode.overwrite
+        ? 'overwrite'
+        : 'fill';
     final preferFilename = MatchSettings.preferFilename.value;
     final lyricOptions = <String, dynamic>{
       'convert': switch (MatchSettings.chineseConvert.value) {
@@ -78,13 +80,15 @@ class _BatchMatchPageState extends State<BatchMatchPage> {
       'filterRules': MatchSettings.filterRules.value,
     };
     final songs = widget.songs
-        .map((s) => {
-              'guid': s.id,
-              'title': s.title,
-              'artist': s.artistDisplayName,
-              'album': s.albumDisplayName,
-              'duration': s.durationMs ?? 0,
-            })
+        .map(
+          (s) => {
+            'guid': s.id,
+            'title': s.title,
+            'artist': s.artistDisplayName,
+            'album': s.albumDisplayName,
+            'duration': s.durationMs ?? 0,
+          },
+        )
         .toList();
 
     try {
@@ -101,6 +105,7 @@ class _BatchMatchPageState extends State<BatchMatchPage> {
         for (final r in results) {
           _status[r.guid] = r.matched ? 'done' : 'error';
         }
+        _completed = results.length;
         _success = results.where((r) => r.matched).length;
         _failed = results.length - _success;
         _running = false;
@@ -116,11 +121,13 @@ class _BatchMatchPageState extends State<BatchMatchPage> {
     } catch (e) {
       debugPrint('[BatchMatch] 批量匹配失败: $e');
       if (!mounted) return;
-      setState(() => _running = false);
-      AppToast.show(context, '批量匹配失败：$e', type: ToastType.error);
+      setState(() {
+        _running = false;
+        _phase = 'error';
+      });
+      AppToast.show(context, '批量匹配结果未确认：$e', type: ToastType.error);
     }
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -186,10 +193,7 @@ class _BatchMatchPageState extends State<BatchMatchPage> {
             Row(
               children: [
                 const SizedBox(width: 12),
-                Text(
-                  '全选',
-                  style: theme.textTheme.bodyMedium,
-                ),
+                Text('全选', style: theme.textTheme.bodyMedium),
                 const Spacer(),
                 Checkbox(
                   value: _fields.length == MatchField.values.length,
@@ -295,44 +299,12 @@ class _BatchMatchPageState extends State<BatchMatchPage> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: Card(
-            margin: EdgeInsets.zero,
-            color: theme.cardColor,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    _running
-                        ? '正在匹配 $_completed/${widget.songs.length}'
-                        : '批量匹配完成',
-                    style: theme.textTheme.titleSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  LinearProgressIndicator(
-                    value: widget.songs.isEmpty
-                        ? 1
-                        : _completed / widget.songs.length,
-                    minHeight: 6,
-                    borderRadius: BorderRadius.circular(3),
-                  ),
-                  const SizedBox(height: 12),
-                  Row(
-                    children: [
-                      _statChip(theme, '总数', widget.songs.length),
-                      _statChip(theme, '成功', _success),
-                      _statChip(theme, '失败', _failed),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+          child: BatchMatchSummary(
+            phase: _phase,
+            total: widget.songs.length,
+            completed: _completed,
+            success: _success,
+            failed: _failed,
           ),
         ),
         Expanded(
@@ -357,22 +329,22 @@ class _BatchMatchPageState extends State<BatchMatchPage> {
                 ),
                 trailing: switch (status) {
                   'running' => const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                   'done' => Icon(
-                      Icons.check_circle_rounded,
-                      color: theme.colorScheme.primary,
-                    ),
+                    Icons.check_circle_rounded,
+                    color: theme.colorScheme.primary,
+                  ),
                   'error' => Icon(
-                      Icons.error_rounded,
-                      color: theme.colorScheme.error,
-                    ),
+                    Icons.error_rounded,
+                    color: theme.colorScheme.error,
+                  ),
                   _ => Icon(
-                      Icons.schedule_rounded,
-                      color: theme.colorScheme.onSurfaceVariant,
-                    ),
+                    Icons.schedule_rounded,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
                 },
                 // 批量匹配由服务端全自动处理，单首不可单独重匹配
                 onTap: null,
@@ -383,30 +355,4 @@ class _BatchMatchPageState extends State<BatchMatchPage> {
       ],
     );
   }
-
-  Widget _statChip(ThemeData theme, String label, int value) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 20),
-      child: Column(
-        children: [
-          Text(
-            '$value',
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: label == '失败' && value > 0
-                  ? theme.colorScheme.error
-                  : null,
-            ),
-          ),
-          Text(
-            label,
-            style: theme.textTheme.bodySmall?.copyWith(
-              color: theme.colorScheme.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 }
-

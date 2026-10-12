@@ -47,7 +47,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     expect(find.text('定时关闭'), findsOneWidget);
-    expect(find.text('到达设定时间后自动停止播放'), findsOneWidget);
 
     await tester.tap(find.text('定时关闭'));
     await tester.pump();

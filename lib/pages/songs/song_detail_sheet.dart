@@ -580,8 +580,6 @@ class _SleepTimerActionTile extends StatelessWidget {
         return AppListTile(
           leading: const Icon(Icons.bedtime_outlined),
           title: '定时关闭',
-          subtitle: isActive ? '剩余 $remaining，点击修改或取消' : '到达设定时间后自动停止播放',
-          trailing: const Icon(Icons.chevron_right_rounded),
           onTap: () {
             // 先关掉「更多」面板再打开定时面板，避免两层底部面板叠在一起。
             final navigator = Navigator.of(context);
