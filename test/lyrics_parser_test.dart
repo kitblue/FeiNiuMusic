@@ -3,6 +3,29 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:feiniu_music/app/services/lyrics/lyrics_parser.dart';
 
 void main() {
+  test('single instrumental notice is treated as empty lyrics', () {
+    for (final text in ['纯音乐', '纯音乐，请欣赏', '此歌曲为没有填词的纯音乐，请您欣赏。']) {
+      for (final timestamp in ['', '[00:00.00]', '[00:00:00]']) {
+        final model = LyricsParser.buildModelFromRaw(
+          '[ti:测试歌曲]\n\n$timestamp$text\n',
+          forceKaraoke: true,
+        );
+        expect(model.lines, isEmpty, reason: '$timestamp$text');
+      }
+    }
+  });
+
+  test('ordinary single lyric and lyrics mentioning instrumental are kept', () {
+    for (final lrc in [
+      '[00:00.00]这是一句正常歌词',
+      '[00:00.00]我听着纯音乐想起了你',
+      '[00:00.00]纯音乐\n[00:05.00]这是一句正常歌词',
+      '[00:00.00]纯音乐\n[00:00.00]这是一句正常歌词',
+    ]) {
+      expect(LyricsParser.buildModelFromRaw(lrc).lines, isNotEmpty);
+    }
+  });
+
   test('parse translation line with same timestamp', () {
     const lrc = '''
 [00:02.392]Ave [00:02.574]Maria [00:04.301]grazia [00:04.589]ricevuta [00:06.145]per [00:06.318]la [00:06.535]mia [00:06.710]famiglia[00:07.285]
