@@ -11,20 +11,6 @@ class ParsedLyricLine {
 }
 
 class LyricsParser {
-  static bool _isInstrumentalNotice(String text) {
-    final normalized = text
-        .trim()
-        .replaceFirst(RegExp(r'^\[\d{1,2}:\d{2}(?:[.:]\d{1,3})?\]'), '')
-        .replaceAll(RegExp(r'[\s，,。.!！：:；;]'), '');
-    return const {
-      '纯音乐',
-      '纯音乐请欣赏',
-      '纯音乐请您欣赏',
-      '此歌曲为没有填词的纯音乐请欣赏',
-      '此歌曲为没有填词的纯音乐请您欣赏',
-    }.contains(normalized);
-  }
-
   static bool _hasHan(String text) => RegExp(r'[\u4E00-\u9FFF]').hasMatch(text);
   static bool _hasKana(String text) =>
       RegExp(r'[\u3040-\u30FF]').hasMatch(text);
@@ -791,13 +777,6 @@ class LyricsParser {
         }
       }
       modelLines.sort((a, b) => a.start.compareTo(b.start));
-    }
-
-    if (modelLines.length == 1 &&
-        _isInstrumentalNotice(modelLines.single.text) &&
-        (!_hasText(modelLines.single.translation) ||
-            _isInstrumentalNotice(modelLines.single.translation!))) {
-      return fl.LyricModel(lines: const []);
     }
 
     final fixedLines = <fl.LyricLine>[];
