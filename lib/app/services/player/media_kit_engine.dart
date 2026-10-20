@@ -353,9 +353,7 @@ class MediaKitEngine implements PlayerEngine {
     final p = _player;
     _player = null;
     if (p != null) {
-      try {
-        await p.dispose();
-      } catch (_) {}
+      await p.dispose();
     }
   }
 

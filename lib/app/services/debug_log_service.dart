@@ -64,6 +64,12 @@ class DebugLogService {
     return entries.value.reversed.join('\n');
   }
 
+  Future<void> flush() async {
+    if (!enabled.value) return;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(_prefsLogs, entries.value);
+  }
+
   void add(String message) {
     if (!enabled.value) return;
     final now = DateTime.now();
