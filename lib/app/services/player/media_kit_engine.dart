@@ -5,6 +5,21 @@ import 'package:media_kit/media_kit.dart' as mk;
 
 import 'player_engine.dart';
 
+Future<void> seekMediaKitWhenLoaded({
+  required Stream<Duration> durations,
+  required Duration Function() currentDuration,
+  required Future<void> Function(Duration) seek,
+  required Duration target,
+  Duration timeout = const Duration(seconds: 10),
+}) async {
+  if (currentDuration() <= Duration.zero) {
+    await durations
+        .firstWhere((value) => value > Duration.zero)
+        .timeout(timeout);
+  }
+  await seek(target);
+}
+
 const _desktopAudioOnlyProperties = <String, String>{
   'cache-on-disk': 'no',
   'audio-display': 'no',
@@ -402,8 +417,15 @@ class MediaKitEngine implements PlayerEngine {
     if (initialPosition != null && initialPosition > Duration.zero) {
       // 恢复播放位置对 CUE 曲目是相对时间：加回该曲起始偏移换算成整轨
       // 绝对位置再让 mpv 定位（否则会 seek 到整轨文件前面的部分）。
-      await player.seek(
-        absoluteCroppedSeekTarget(initialPosition, medias[safeIndex].start),
+      // open 只保证播放列表已提交，文件未加载时 seek 会被 mpv 拒绝。
+      await seekMediaKitWhenLoaded(
+        durations: player.stream.duration,
+        currentDuration: () => player.state.duration,
+        seek: player.seek,
+        target: absoluteCroppedSeekTarget(
+          initialPosition,
+          medias[safeIndex].start,
+        ),
       );
     }
   }

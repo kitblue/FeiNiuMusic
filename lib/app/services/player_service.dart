@@ -3532,7 +3532,7 @@ class PlayerService with WidgetsBindingObserver {
   }
 
   void _schedulePersistPlaybackState({bool immediate = false}) {
-    if (_restoringState) return;
+    if (_restoringState || _shuttingDown) return;
 
     if (immediate) {
       _persistTimer?.cancel();
@@ -3600,6 +3600,9 @@ class PlayerService with WidgetsBindingObserver {
   }
 
   Future<void> _persistPlaybackState() async {
+    // 窗口启动/失活事件也会直接保存，不能只在定时保存入口阻止写入。
+    // 恢复完成前的空队列、零进度不是用户清空，不能覆盖上次播放会话。
+    if (_restoringState || _shuttingDown) return;
     _lastPersistTime = DateTime.now();
     final list = queue.value;
     final index = currentIndex.value;
