@@ -140,162 +140,137 @@ class _SongDetailSheetState extends State<SongDetailSheet> {
       ),
       child: SafeArea(
         top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Center(
-              child: Container(
-                margin: const EdgeInsets.symmetric(vertical: 12),
-                width: 32,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: isDark ? Colors.grey[800] : Colors.grey[300],
-                  borderRadius: BorderRadius.circular(2),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Center(
+                child: Container(
+                  margin: const EdgeInsets.symmetric(vertical: 12),
+                  width: 32,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.grey[800] : Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Row(
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: _buildCover(theme, song),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          song.title,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          '$artist · $album',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: 13,
-                            color: secondaryTextColor,
-                          ),
-                        ),
-                      ],
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: Row(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(8),
+                      child: _buildCover(theme, song),
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '$artist · $album',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: secondaryTextColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const Divider(height: 1, thickness: 0.6),
-            // 播放控制（音量/倍速/解码器）：仅播放器界面打开时显示，
-            // 列表/搜索等入口打开的是「歌曲信息」面板，不显示播放控制。
-            if (widget.showPlayerControls) ...[
-              const _AppVolumeControl(),
-              const _PlaybackSpeedControl(),
-              const _SleepTimerActionTile(),
-            ],
-            AppListTile(
-              leading: const Icon(Icons.queue_play_next),
-              title: '下一首播放',
-              onTap: () async {
-                final api = FeiNiuApiClient.instance;
-                final streamUrl = api.baseUrl.isNotEmpty
-                    ? '${api.baseUrl}/music/api/v1/track/stream?guid=${song.id}'
-                    : song.uri;
-                final playable = song.copyWith(uri: streamUrl ?? '');
-                await PlayerService.instance.playNext(playable);
-                if (!context.mounted) return;
-                AppToast.show(context, '已添加到下一首');
-                Navigator.of(context).pop();
-              },
-            ),
-            AppListTile(
-              leading: const Icon(Icons.add_to_photos_outlined),
-              title: '添加到歌单',
-              onTap: () async {
-                await showAddToPlaylistDialog(context, songIds: [song.id]);
-                if (!context.mounted) return;
-                Navigator.of(context).pop();
-              },
-            ),
-            AppListTile(
-              leading: const Icon(Icons.edit_outlined),
-              title: '编辑歌曲信息',
-              onTap: () async {
-                final nav = Navigator.of(context);
-                nav.pop(); // 关闭详情 sheet
-                final updated = await nav.push<SongEntity>(
-                  buildAppPageRoute((_) => SongEditPage(song: widget.song)),
-                );
-                if (updated != null) {
-                  // 激活回调刷新列表 + 更新当前播放/队列
-                  widget.onUpdated?.call(updated);
-                  await PlayerService.instance.updateSongMetadata(updated);
-                }
-              },
-            ),
-            if (widget.extraActions != null) ...widget.extraActions!,
-            if (widget.onOpenPlayerAppearanceSettings != null)
+              const Divider(height: 1, thickness: 0.6),
+              // 播放控制（音量/倍速/解码器）：仅播放器界面打开时显示，
+              // 列表/搜索等入口打开的是「歌曲信息」面板，不显示播放控制。
+              if (widget.showPlayerControls) ...[
+                const _AppVolumeControl(),
+                const _PlaybackSpeedControl(),
+                const _SleepTimerActionTile(),
+              ],
               AppListTile(
-                leading: const Icon(Icons.tune_rounded),
-                title: '播放器界面设置',
-                onTap: () {
-                  final nav = Navigator.of(context);
-                  nav.pop();
-                  widget.onOpenPlayerAppearanceSettings?.call();
+                leading: const Icon(Icons.queue_play_next),
+                title: '下一首播放',
+                onTap: () async {
+                  final api = FeiNiuApiClient.instance;
+                  final streamUrl = api.baseUrl.isNotEmpty
+                      ? '${api.baseUrl}/music/api/v1/track/stream?guid=${song.id}'
+                      : song.uri;
+                  final playable = song.copyWith(uri: streamUrl ?? '');
+                  await PlayerService.instance.playNext(playable);
+                  if (!context.mounted) return;
+                  AppToast.show(context, '已添加到下一首');
+                  Navigator.of(context).pop();
                 },
               ),
-            AppListTile(
-              leading: const Icon(Icons.person),
-              title: '歌手：$primaryArtist',
-              onTap: () {
-                final nav = Navigator.of(context);
-                nav.pop();
-                final callback = widget.onOpenArtist;
-                if (callback != null) {
-                  callback(primaryArtist);
-                } else {
-                  // 未提供回调时自行导航（默认行为，供未传回调的调用点使用）
-                  final guid = song.firstArtistGuid;
-                  if (guid != null) {
-                    nav.push(
-                      MaterialPageRoute(
-                        builder: (_) => ArtistDetailPage(
-                          artistName: primaryArtist,
-                          artistGuid: guid,
-                        ),
-                      ),
-                    );
-                  }
-                }
-              },
-            ),
-            if (canOpenAlbum)
               AppListTile(
-                leading: const Icon(Icons.album),
-                title: '专辑：$album',
+                leading: const Icon(Icons.add_to_photos_outlined),
+                title: '添加到歌单',
+                onTap: () async {
+                  await showAddToPlaylistDialog(context, songIds: [song.id]);
+                  if (!context.mounted) return;
+                  Navigator.of(context).pop();
+                },
+              ),
+              AppListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: '编辑歌曲信息',
+                onTap: () async {
+                  final nav = Navigator.of(context);
+                  nav.pop(); // 关闭详情 sheet
+                  final updated = await nav.push<SongEntity>(
+                    buildAppPageRoute((_) => SongEditPage(song: widget.song)),
+                  );
+                  if (updated != null) {
+                    // 激活回调刷新列表 + 更新当前播放/队列
+                    widget.onUpdated?.call(updated);
+                    await PlayerService.instance.updateSongMetadata(updated);
+                  }
+                },
+              ),
+              if (widget.extraActions != null) ...widget.extraActions!,
+              if (widget.onOpenPlayerAppearanceSettings != null)
+                AppListTile(
+                  leading: const Icon(Icons.tune_rounded),
+                  title: '播放器界面设置',
+                  onTap: () {
+                    final nav = Navigator.of(context);
+                    nav.pop();
+                    widget.onOpenPlayerAppearanceSettings?.call();
+                  },
+                ),
+              AppListTile(
+                leading: const Icon(Icons.person),
+                title: '歌手：$primaryArtist',
                 onTap: () {
                   final nav = Navigator.of(context);
                   nav.pop();
-                  final callback = widget.onOpenAlbum;
+                  final callback = widget.onOpenArtist;
                   if (callback != null) {
-                    callback(song.albumDisplayName);
+                    callback(primaryArtist);
                   } else {
-                    // 未提供回调时自行导航（默认行为）
-                    final guid = song.albumGuid;
+                    // 未提供回调时自行导航（默认行为，供未传回调的调用点使用）
+                    final guid = song.firstArtistGuid;
                     if (guid != null) {
                       nav.push(
                         MaterialPageRoute(
-                          builder: (_) => AlbumDetailPage(
-                            albumName: song.albumDisplayName,
-                            albumGuid: guid,
+                          builder: (_) => ArtistDetailPage(
+                            artistName: primaryArtist,
+                            artistGuid: guid,
                           ),
                         ),
                       );
@@ -303,46 +278,74 @@ class _SongDetailSheetState extends State<SongDetailSheet> {
                   }
                 },
               ),
-            if (song.audioSpec != null && song.audioSpec!.isNotEmpty)
-              AppListTile(
-                leading: const Icon(Icons.info_outline),
-                title: '音频规格',
-                subtitle: song.audioSpec,
-                // 转码格式 tag + 解码器 tag 属于播放控制：仅播放器界面打开时显示，
-                // 点击可切换。转码 tag 显示当前转码格式（FLAC/MP3/OPUS）或「直连」。
-                trailing: widget.showPlayerControls
-                    ? ValueListenableBuilder<EngineKind>(
-                        valueListenable: PlayerService.instance.decoderEngine,
-                        builder: (context, engine, _) => Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _TranscodeTag(
-                              song: song,
-                              onTap: () => _showTranscodeFormatPicker(context),
+              if (canOpenAlbum)
+                AppListTile(
+                  leading: const Icon(Icons.album),
+                  title: '专辑：$album',
+                  onTap: () {
+                    final nav = Navigator.of(context);
+                    nav.pop();
+                    final callback = widget.onOpenAlbum;
+                    if (callback != null) {
+                      callback(song.albumDisplayName);
+                    } else {
+                      // 未提供回调时自行导航（默认行为）
+                      final guid = song.albumGuid;
+                      if (guid != null) {
+                        nav.push(
+                          MaterialPageRoute(
+                            builder: (_) => AlbumDetailPage(
+                              albumName: song.albumDisplayName,
+                              albumGuid: guid,
                             ),
-                            const SizedBox(width: 6),
-                            _DecoderTag(
-                              engine: engine,
-                              // 桌面端只有 media_kit（FFmpeg）引擎，
-                              // 禁止手动切到 just_audio（无实现）。
-                              onTap:
-                                  Platform.isWindows ||
-                                      Platform.isMacOS ||
-                                      Platform.isLinux
-                                  ? null
-                                  : () => _showDecoderPicker(context, engine),
-                            ),
-                          ],
-                        ),
-                      )
-                    : null,
-                onTap: () {
-                  final nav = Navigator.of(context);
-                  nav.pop();
-                },
-              ),
-            const SizedBox(height: 8),
-          ],
+                          ),
+                        );
+                      }
+                    }
+                  },
+                ),
+              if (song.audioSpec != null && song.audioSpec!.isNotEmpty)
+                AppListTile(
+                  leading: const Icon(Icons.info_outline),
+                  title: '音频规格',
+                  subtitle: song.audioSpec,
+                  // 转码格式 tag + 解码器 tag 属于播放控制：仅播放器界面打开时显示，
+                  // 点击可切换。转码 tag 显示当前转码格式（FLAC/MP3/OPUS）或「直连」。
+                  trailing: widget.showPlayerControls
+                      ? ValueListenableBuilder<EngineKind>(
+                          valueListenable: PlayerService.instance.decoderEngine,
+                          builder: (context, engine, _) => Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _TranscodeTag(
+                                song: song,
+                                onTap: () =>
+                                    _showTranscodeFormatPicker(context),
+                              ),
+                              const SizedBox(width: 6),
+                              _DecoderTag(
+                                engine: engine,
+                                // 桌面端只有 media_kit（FFmpeg）引擎，
+                                // 禁止手动切到 just_audio（无实现）。
+                                onTap:
+                                    Platform.isWindows ||
+                                        Platform.isMacOS ||
+                                        Platform.isLinux
+                                    ? null
+                                    : () => _showDecoderPicker(context, engine),
+                              ),
+                            ],
+                          ),
+                        )
+                      : null,
+                  onTap: () {
+                    final nav = Navigator.of(context);
+                    nav.pop();
+                  },
+                ),
+              const SizedBox(height: 8),
+            ],
+          ),
         ),
       ),
     );
