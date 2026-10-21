@@ -1,9 +1,53 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:feiniu_music/app/services/player/media_kit_engine.dart';
 import 'package:feiniu_music/app/services/player/player_engine.dart';
 
 void main() {
+  test('恢复位置等待文件时长就绪后再 seek', () async {
+    final durations = StreamController<Duration>();
+    final seeks = <Duration>[];
+    final restoring = seekMediaKitWhenLoaded(
+      durations: durations.stream,
+      currentDuration: () => Duration.zero,
+      seek: (target) async => seeks.add(target),
+      target: const Duration(seconds: 42),
+    );
+    durations.add(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(seeks, isEmpty);
+    durations.add(const Duration(minutes: 3));
+    await restoring;
+    expect(seeks, [const Duration(seconds: 42)]);
+    await durations.close();
+  });
+
+  test('文件已加载时立即恢复，加载失败超时不发送无效 seek', () async {
+    final seeks = <Duration>[];
+    await seekMediaKitWhenLoaded(
+      durations: const Stream.empty(),
+      currentDuration: () => const Duration(minutes: 3),
+      seek: (target) async => seeks.add(target),
+      target: const Duration(seconds: 42),
+    );
+    expect(seeks, [const Duration(seconds: 42)]);
+    final durations = StreamController<Duration>();
+    await expectLater(
+      seekMediaKitWhenLoaded(
+        durations: durations.stream,
+        currentDuration: () => Duration.zero,
+        seek: (target) async => seeks.add(target),
+        target: const Duration(seconds: 60),
+        timeout: Duration.zero,
+      ),
+      throwsA(isA<TimeoutException>()),
+    );
+    expect(seeks, [const Duration(seconds: 42)]);
+    await durations.close();
+  });
+
   group('configureMediaKitDesktopAudioOnly', () {
     test('禁用 mpv 磁盘缓存、内嵌封面显示和视频轨', () async {
       final applied = <String, String>{};
