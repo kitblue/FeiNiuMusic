@@ -6,12 +6,28 @@ class AppDelegate: FlutterAppDelegate {
   /// 应用是否正在退出（状态栏菜单「退出」/ Cmd+Q 触发）。
   /// 供 MainFlutterWindow.windowShouldClose 判断：真正退出时放行关闭，
   /// 仅关闭按钮点击时隐藏到托盘。NSApplication 没有公开 isTerminating，
-  /// 所以用退出流程最早的回调（applicationShouldTerminate）置位。
+  /// 等播放器清理完成、批准真正退出时才置位。
   static var isTerminating = false
+  private var terminationPending = false
 
   override func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    AppDelegate.isTerminating = true
-    return .terminateNow
+    if AppDelegate.isTerminating { return .terminateNow }
+    if terminationPending { return .terminateLater }
+    guard let window = mainFlutterWindow as? MainFlutterWindow else {
+      return .terminateCancel
+    }
+    terminationPending = true
+    // 先返回 terminateLater，保留 Flutter 引擎处理播放器的异步清理。
+    DispatchQueue.main.async { [weak self] in
+      window.prepareForExit { success in
+        DispatchQueue.main.async {
+          self?.terminationPending = false
+          AppDelegate.isTerminating = success
+          sender.reply(toApplicationShouldTerminate: success)
+        }
+      }
+    }
+    return .terminateLater
   }
 
   override func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

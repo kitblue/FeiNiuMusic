@@ -19,6 +19,8 @@ import 'app/services/desktop_tray_service.dart';
 import 'app/services/fn_auto_reconnect_service.dart';
 import 'app/services/island_lyric_service.dart';
 import 'app/services/macos_status_bar_service.dart';
+import 'app/services/macos_app_exit_service.dart';
+import 'app/services/player_service.dart';
 import 'app/services/desktop_lyrics_service.dart';
 import 'app/services/macos_window_background_service.dart';
 import 'app/services/media_notification_service.dart';
@@ -67,20 +69,25 @@ Future<void> main(List<String> args) async {
     debugPrint('MediaKit.ensureInitialized failed: $e');
   }
   await DebugLogService.instance.ensureLoaded();
+  if (Platform.isMacOS) {
+    await MacosAppExitService(
+      prepareForExit: () => PlayerService.instance.prepareForExit(),
+    ).init();
+  }
   // 全局异常捕获：release 下 Flutter 默认只输出无信息的
   // “Another exception was thrown: Instance of 'DiagnosticsProperty<void>'”
   // 级联产物，真异常（含堆栈）被吞，无法定位闪退根因。这里把首条异常
   // + 堆栈写入调试日志（设置→版本信息→导出日志可见），同时转发给原 handler。
   final originalFlutterError = FlutterError.onError;
   FlutterError.onError = (FlutterErrorDetails details) {
-    DebugLogService.instance
-        .add('[FlutterError] ${details.exceptionAsString()}\n'
-            '${details.stack ?? ''}');
+    DebugLogService.instance.add(
+      '[FlutterError] ${details.exceptionAsString()}\n'
+      '${details.stack ?? ''}',
+    );
     originalFlutterError?.call(details);
   };
   PlatformDispatcher.instance.onError = (error, stack) {
-    DebugLogService.instance
-        .add('[PlatformDispatcher] $error\n$stack');
+    DebugLogService.instance.add('[PlatformDispatcher] $error\n$stack');
     // 返回 false：仅记录，不拦截默认崩溃处理（避免掩盖真正的进程级错误）
     return false;
   };
@@ -339,7 +346,6 @@ void _warmupConnection() {
 void _warmupDirectIpConnection() {
   // fire-and-forget：不 await，不抛异常到顶层
   unawaited(
-    FnConnectionProbeService.instance
-        .upgradeLiveConnectionToHttpsIfRedirects(),
+    FnConnectionProbeService.instance.upgradeLiveConnectionToHttpsIfRedirects(),
   );
 }

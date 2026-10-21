@@ -9,6 +9,21 @@ private var childWindowChannels: [FlutterMethodChannel] = []
 class MainFlutterWindow: NSWindow, NSWindowDelegate {
   private var statusBarController: MacosStatusBarController?
   private var systemFontsChannel: FlutterMethodChannel?
+  private var appExitChannel: FlutterMethodChannel?
+  private var appExitReady = false
+
+  func prepareForExit(completion: @escaping (Bool) -> Void) {
+    guard appExitReady, let channel = appExitChannel else {
+      NSLog("[AppExit] Dart shutdown handler is not ready; cancelling exit")
+      completion(false)
+      return
+    }
+    channel.invokeMethod("prepareForExit", arguments: nil) { result in
+      let ready = (result as? Bool) == true
+      if !ready { NSLog("[AppExit] Player shutdown failed: %@", String(describing: result)) }
+      completion(ready)
+    }
+  }
 
   /// 关闭按钮是否隐藏到菜单栏（由 Dart 通过 statusbar 通道推送，默认开启）。
   var closeToTray = true
@@ -27,6 +42,17 @@ class MainFlutterWindow: NSWindow, NSWindowDelegate {
     flutterViewController.backgroundColor = resolveInitialBackground()
 
     RegisterGeneratedPlugins(registry: flutterViewController)
+    appExitChannel = FlutterMethodChannel(
+      name: "com.feiniu.music/app_exit",
+      binaryMessenger: flutterViewController.engine.binaryMessenger)
+    appExitChannel?.setMethodCallHandler { [weak self] call, result in
+      guard call.method == "ready" else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      self?.appExitReady = true
+      result(nil)
+    }
     FlutterMultiWindowPlugin.setOnWindowCreatedCallback { controller in
       // desktop_multi_window 创建的子窗口不会经过 MainFlutterWindow.awakeFromNib，
       // FlutterViewController 默认背景会把透明歌词窗口渲染成黑色不透明矩形。
