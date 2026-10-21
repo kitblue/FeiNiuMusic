@@ -12,6 +12,7 @@ mixin LyricLineHightlightMixin<T extends StatefulWidget>
 
   var activeHighlightWidthNotifier = ValueNotifier(0.0);
   int? _lastActiveIndex;
+  Object? _lastHighlightLayout;
   List<double>? _currentWordWidths;
   Duration _lastProgress = Duration.zero;
   int _lastUpdateAtMs = 0;
@@ -78,9 +79,9 @@ mixin LyricLineHightlightMixin<T extends StatefulWidget>
           ? end.inMilliseconds
           : start.inMilliseconds + ((totalMs * (i + 1)) ~/ len);
       final ws = Duration(milliseconds: wordStartMs);
-      final we = Duration(milliseconds: (wordEndMs <= wordStartMs)
-          ? (wordStartMs + 1)
-          : wordEndMs);
+      final we = Duration(
+          milliseconds:
+              (wordEndMs <= wordStartMs) ? (wordStartMs + 1) : wordEndMs);
       words.add(LyricWord(text: ch, start: ws, end: we));
     }
     return words;
@@ -99,8 +100,10 @@ mixin LyricLineHightlightMixin<T extends StatefulWidget>
     final currentProgress = controller.progressNotifier.value +
         Duration(milliseconds: controller.lyricOffset);
 
-    if (_lastActiveIndex != index) {
+    // 切歌或重新排版后行号可能相同，字宽仍必须按新布局重新计算。
+    if (_lastActiveIndex != index || !identical(_lastHighlightLayout, layout)) {
       _lastActiveIndex = index;
+      _lastHighlightLayout = layout;
       _currentWordWidths = null;
       _lastProgress = currentProgress;
       _lastUpdateAtMs = 0;
@@ -130,13 +133,15 @@ mixin LyricLineHightlightMixin<T extends StatefulWidget>
     }
 
     final style = line.activeTextPainter.text?.style;
-    if (_currentWordWidths == null && words.isNotEmpty) {
+    if ((_currentWordWidths == null ||
+            _currentWordWidths!.length != words.length) &&
+        words.isNotEmpty) {
       final wordMetrics = line.words;
       if (wordMetrics != null && wordMetrics.length == words.length) {
-        _currentWordWidths =
-            wordMetrics.map((w) => w.highlightWidth).toList();
+        _currentWordWidths = wordMetrics.map((w) => w.highlightWidth).toList();
       } else if (style != null) {
-        _currentWordWidths = words.map((w) => _measureText(w.text, style)).toList();
+        _currentWordWidths =
+            words.map((w) => _measureText(w.text, style)).toList();
       }
     }
     final wordWidths = _currentWordWidths ?? List.filled(words.length, 0.0);
@@ -147,8 +152,9 @@ mixin LyricLineHightlightMixin<T extends StatefulWidget>
         line.activeMetrics.fold<double>(0.0, (sum, m) => sum + m.width);
     final maxHighlightWidth =
         totalLineWidth > 0 ? totalLineWidth : activeTextWidth;
-    final widthScale =
-        totalWidth > 0 && maxHighlightWidth > 0 ? maxHighlightWidth / totalWidth : 1.0;
+    final widthScale = totalWidth > 0 && maxHighlightWidth > 0
+        ? maxHighlightWidth / totalWidth
+        : 1.0;
 
     final model = controller.lyricNotifier.value;
     Duration? lineEnd = line.line.end;
