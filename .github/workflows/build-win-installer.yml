@@ -1,0 +1,255 @@
+name: Build Windows Installer
+
+# 跟随上游 kuilei0926/FeiNiuMusic 的发版节奏，自动构建 Windows 安装版
+# （Inno Setup，含「检查更新-下载-静默安装」能力）并发布到本仓库 Release。
+#
+# 触发：
+#   - 定时（每 6 小时）轮询上游最新 Release
+#   - 手动指定 tag / 强制重建
+# 无新版本（本仓库已有同 tag Release）时自动跳过，不浪费构建额度。
+
+on:
+  schedule:
+    - cron: "0 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "上游 tag（如 v1.6.9，留空则取上游最新 Release）"
+        required: false
+        default: ""
+      force:
+        description: "已存在同 tag 安装版 Release 时仍强制重建"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-win-installer
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPO: kuilei0926/FeiNiuMusic
+
+jobs:
+  resolve:
+    runs-on: windows-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      version: ${{ steps.pick.outputs.version }}
+      commit: ${{ steps.pick.outputs.commit }}
+      should_build: ${{ steps.pick.outputs.should_build }}
+    steps:
+      - name: 解析目标版本
+        id: pick
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_TAG: ${{ inputs.tag }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+
+          $tag = "$env:INPUT_TAG".Trim()
+          if ([string]::IsNullOrWhiteSpace($tag)) {
+            $tag = gh api "repos/$env:UPSTREAM_REPO/releases/latest" --jq ".tag_name"
+          }
+          if ([string]::IsNullOrWhiteSpace($tag)) { throw "无法解析上游版本 tag" }
+          $tag = $tag.Trim()
+
+          $commit = gh api "repos/$env:UPSTREAM_REPO/commits/$tag" --jq ".sha"
+          $version = $tag.TrimStart("v", "V")
+
+          $exists = $false
+          $ErrorActionPreference = "Continue"
+          gh api "repos/${{ github.repository }}/releases/tags/$tag" --silent 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) { $exists = $true }
+          $ErrorActionPreference = "Stop"
+
+          $shouldBuild = "true"
+          if ($exists -and "$env:FORCE" -ne "true") {
+            $shouldBuild = "false"
+            Write-Host "本仓库已存在 $tag 的安装版 Release，跳过构建"
+          }
+
+          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
+          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
+          echo "COMMIT=$commit" >> $env:GITHUB_OUTPUT
+          echo "SHOULD_BUILD=$shouldBuild" >> $env:GITHUB_OUTPUT
+          Write-Host "目标版本：$tag（$version）commit=$commit build=$shouldBuild"
+
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.should_build == 'true'
+    runs-on: windows-latest
+    steps:
+      # 1) 本仓库（补丁 + 安装脚本 + 工作流）
+      - name: Checkout 本仓库
+        uses: actions/checkout@v4
+        with:
+          path: fork
+
+      # 2) 上游对应 tag 的源码
+      - name: Checkout 上游源码
+        uses: actions/checkout@v4
+        with:
+          repository: kuilei0926/FeiNiuMusic
+          ref: ${{ needs.resolve.outputs.tag }}
+          path: src
+
+      - name: 启用 Windows 超长路径（flutter SDK clone 需要）
+        shell: powershell
+        run: |
+          git config --global core.longpaths true
+          git config --global core.symlinks false
+
+      - uses: subosito/flutter-action@v2
+        with:
+          # 与 build-release.yml 保持一致：main 通道锁定到已验证 commit
+          channel: main
+          flutter-version: c97838627ff5c275e9788839d427ab03eb1dfa01
+          cache: true
+
+      # 把本仓库维护的自动更新补丁覆盖进上游源码；任一步校验失败即中断，
+      # 避免产出「没有自动更新能力」的安装包。
+      - name: 应用 Windows 自动更新补丁
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          python fork\tools\windows_update\apply_patch.py --root src
+
+      - name: 拉取依赖
+        working-directory: src
+        shell: powershell
+        run: flutter pub get
+
+      # --dart-define 把发布仓库注入应用，保证「检查更新」与「下载安装包」同源
+      - name: 构建 Windows Release
+        working-directory: src
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          flutter build windows --release --dart-define=FEINIU_UPDATE_REPO=${{ github.repository }}
+          if ($LASTEXITCODE -ne 0) { throw "flutter build windows 失败（exit=$LASTEXITCODE）" }
+
+      - name: 安装 Inno Setup 与中文语言文件
+        shell: powershell
+        run: |
+          choco install innosetup --no-progress -y
+          $langDir = "C:\Program Files (x86)\Inno Setup 6\Languages"
+          try {
+            Invoke-WebRequest -UseBasicParsing -TimeoutSec 60 `
+              -Uri "https://raw.githubusercontent.com/jrsoftware/issrc/main/Files/Languages/Unofficial/ChineseSimplified.isl" `
+              -OutFile (Join-Path $langDir "ChineseSimplified.isl")
+            Write-Host "中文语言文件已就绪"
+          } catch {
+            Write-Warning "中文语言文件下载失败，退回英文界面：$($_.Exception.Message)"
+          }
+
+      - name: 编译安装包
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { throw "未找到 ISCC.exe" }
+          $releaseDir = (Resolve-Path "src\build\windows\x64\runner\Release").Path
+          & $iscc `
+            "/DFEINIU_VERSION=${{ needs.resolve.outputs.version }}" `
+            "/DFEINIU_RELEASE_DIR=$releaseDir" `
+            "fork\installer\feiniumusic.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup 编译失败（exit=$LASTEXITCODE）" }
+
+      - name: 生成校验信息
+        shell: powershell
+        run: |
+          $ErrorActionPreference = "Stop"
+          $exe = Get-ChildItem "fork\build\installer\FeiNiuMusic-v*-Windows-Setup.exe" | Select-Object -First 1
+          if (-not $exe) { throw "未找到安装包产物" }
+          $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          $size = [math]::Round($exe.Length / 1MB, 1)
+          Copy-Item $exe.FullName (Join-Path $env:GITHUB_WORKSPACE $exe.Name) -Force
+          "$hash" | Out-File -FilePath (Join-Path $env:GITHUB_WORKSPACE "installer.sha256") -Encoding ascii -NoNewline
+          Write-Host "安装包：$($exe.Name)（$size MB）SHA256=$hash"
+
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: |
+            FeiNiuMusic-v*-Windows-Setup.exe
+            installer.sha256
+          if-no-files-found: error
+
+  publish:
+    needs: [resolve, build]
+    if: needs.resolve.outputs.should_build == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: 下载安装包
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-installer
+          path: dist
+
+      - name: 发布到本仓库 Release
+        shell: powershell
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+          COMMIT: ${{ needs.resolve.outputs.commit }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+          $repo = "${{ github.repository }}"
+          $sha = (Get-Content "dist\installer.sha256" -Raw).Trim()
+          $exe = Get-ChildItem "dist\FeiNiuMusic-v*-Windows-Setup.exe" | Select-Object -First 1
+          if (-not $exe) { throw "dist 中没有安装包" }
+
+          $upstreamNotes = ""
+          try {
+            $upstreamNotes = gh api "repos/$env:UPSTREAM_REPO/releases/tags/$env:TAG" --jq ".body"
+          } catch {
+            Write-Warning "读取上游 Release 说明失败：$($_.Exception.Message)"
+          }
+
+          $notes = @"
+          ## Windows 安装版（自动构建）
+
+          - 版本：$env:VERSION
+          - 安装包：$($exe.Name)
+          - SHA256：``$sha``
+          - 安装位置：``%LOCALAPPDATA%\Programs\FeiNiuMusic``（无需管理员权限）
+          - 支持应用内自动更新：启动后自动检查，发现新版本可在弹窗内直接下载并静默安装，
+            安装完成后自动重启到新版本。
+
+          ---
+
+          $upstreamNotes
+          "@
+          $notes | Out-File -FilePath notes.md -Encoding utf8
+
+          $payload = @{
+            tag_name = "$env:TAG"
+            target_commitish = "$env:COMMIT"
+            name = "飞牛音乐 v$env:VERSION（Windows 安装版）"
+            body = $notes
+            draft = $false
+            prerelease = $false
+          } | ConvertTo-Json -Depth 5
+          $payload | Out-File -FilePath payload.json -Encoding utf8
+
+          $ErrorActionPreference = "Continue"
+          gh release view "$env:TAG" --repo $repo 2>$null | Out-Null
+          $releaseExists = ($LASTEXITCODE -eq 0)
+          $ErrorActionPreference = "Stop"
+          if ($releaseExists) {
+            gh release edit "$env:TAG" --repo $repo --title "飞牛音乐 v$env:VERSION（Windows 安装版）" --notes-file notes.md
+          } else {
+            gh api -X POST "repos/$repo/releases" --input payload.json | Out-Null
+          }
+
+          gh release upload "$env:TAG" $exe.FullName --repo $repo --clobber
+          Write-Host "已发布 $env:TAG：$($exe.Name)"
