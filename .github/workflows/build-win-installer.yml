@@ -80,6 +80,8 @@ jobs:
           Add-Content -Path $env:GITHUB_OUTPUT -Value "COMMIT=$commit"
           Add-Content -Path $env:GITHUB_OUTPUT -Value "SHOULD_BUILD=$shouldBuild"
           Write-Host "目标版本：$tag（$version）commit=$commit build=$shouldBuild"
+          $LASTEXITCODE = 0
+
 
   build:
     needs: resolve
@@ -224,7 +226,7 @@ jobs:
           $notes = @"
           ## Windows 安装版（自动构建）
 
-          - 版本：$env:VERSION
+          - 版本：$env:VERSION（上游 commit ``$env:COMMIT``）
           - 安装包：$($exe.Name)
           - SHA256：``$sha``
           - 安装位置：``%LOCALAPPDATA%\Programs\FeiNiuMusic``（无需管理员权限）
@@ -237,24 +239,16 @@ jobs:
           "@
           $notes | Out-File -FilePath notes.md -Encoding utf8
 
-          $payload = @{
-            tag_name = "$env:TAG"
-            target_commitish = "$env:COMMIT"
-            name = "飞牛音乐 v$env:VERSION（Windows 安装版）"
-            body = $notes
-            draft = $false
-            prerelease = $false
-          } | ConvertTo-Json -Depth 5
-          $payload | Out-File -FilePath payload.json -Encoding utf8
-
           $ErrorActionPreference = "Continue"
           gh release view "$env:TAG" --repo $repo 2>$null | Out-Null
           $releaseExists = ($LASTEXITCODE -eq 0)
           $ErrorActionPreference = "Stop"
           if ($releaseExists) {
             gh release edit "$env:TAG" --repo $repo --title "飞牛音乐 v$env:VERSION（Windows 安装版）" --notes-file notes.md
+            if ($LASTEXITCODE -ne 0) { throw "更新 Release 说明失败" }
           } else {
-            gh api -X POST "repos/$repo/releases" --input payload.json | Out-Null
+            gh release create "$env:TAG" --repo $repo --title "飞牛音乐 v$env:VERSION（Windows 安装版）" --notes-file notes.md --latest
+            if ($LASTEXITCODE -ne 0) { throw "创建 Release 失败" }
           }
 
           gh release upload "$env:TAG" $exe.FullName --repo $repo --clobber
