@@ -25,6 +25,12 @@ import pathlib
 import shutil
 import sys
 
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
+
 PATCH_DIR = pathlib.Path(__file__).resolve().parent
 
 TARGETS = {

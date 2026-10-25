@@ -119,10 +119,14 @@ jobs:
       # 避免产出「没有自动更新能力」的安装包。
       - name: 应用 Windows 自动更新补丁
         shell: pwsh
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
         run: |
           $ErrorActionPreference = "Stop"
           $PSNativeCommandUseErrorActionPreference = $false
           python fork\tools\windows_update\apply_patch.py --root src
+          if ($LASTEXITCODE -ne 0) { throw "补丁应用失败（exit=$LASTEXITCODE）" }
 
       - name: 拉取依赖
         working-directory: src
