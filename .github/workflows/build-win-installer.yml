@@ -43,13 +43,14 @@ jobs:
     steps:
       - name: 解析目标版本
         id: pick
-        shell: powershell
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_TAG: ${{ inputs.tag }}
           FORCE: ${{ inputs.force }}
         run: |
           $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
 
           $tag = "$env:INPUT_TAG".Trim()
@@ -60,7 +61,7 @@ jobs:
           $tag = $tag.Trim()
 
           $commit = gh api "repos/$env:UPSTREAM_REPO/commits/$tag" --jq ".sha"
-          $version = $tag.TrimStart("v", "V")
+          $version = $tag -replace '^[vV]', ''
 
           $exists = $false
           $ErrorActionPreference = "Continue"
@@ -74,10 +75,10 @@ jobs:
             Write-Host "本仓库已存在 $tag 的安装版 Release，跳过构建"
           }
 
-          echo "TAG=$tag" >> $env:GITHUB_OUTPUT
-          echo "VERSION=$version" >> $env:GITHUB_OUTPUT
-          echo "COMMIT=$commit" >> $env:GITHUB_OUTPUT
-          echo "SHOULD_BUILD=$shouldBuild" >> $env:GITHUB_OUTPUT
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "TAG=$tag"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "VERSION=$version"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "COMMIT=$commit"
+          Add-Content -Path $env:GITHUB_OUTPUT -Value "SHOULD_BUILD=$shouldBuild"
           Write-Host "目标版本：$tag（$version）commit=$commit build=$shouldBuild"
 
   build:
@@ -100,7 +101,7 @@ jobs:
           path: src
 
       - name: 启用 Windows 超长路径（flutter SDK clone 需要）
-        shell: powershell
+        shell: pwsh
         run: |
           git config --global core.longpaths true
           git config --global core.symlinks false
@@ -115,27 +116,29 @@ jobs:
       # 把本仓库维护的自动更新补丁覆盖进上游源码；任一步校验失败即中断，
       # 避免产出「没有自动更新能力」的安装包。
       - name: 应用 Windows 自动更新补丁
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
           python fork\tools\windows_update\apply_patch.py --root src
 
       - name: 拉取依赖
         working-directory: src
-        shell: powershell
+        shell: pwsh
         run: flutter pub get
 
       # --dart-define 把发布仓库注入应用，保证「检查更新」与「下载安装包」同源
       - name: 构建 Windows Release
         working-directory: src
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
           flutter build windows --release --dart-define=FEINIU_UPDATE_REPO=${{ github.repository }}
           if ($LASTEXITCODE -ne 0) { throw "flutter build windows 失败（exit=$LASTEXITCODE）" }
 
       - name: 安装 Inno Setup 与中文语言文件
-        shell: powershell
+        shell: pwsh
         run: |
           choco install innosetup --no-progress -y
           $langDir = "C:\Program Files (x86)\Inno Setup 6\Languages"
@@ -149,9 +152,10 @@ jobs:
           }
 
       - name: 编译安装包
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
           $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
           if (-not (Test-Path $iscc)) { throw "未找到 ISCC.exe" }
           $releaseDir = (Resolve-Path "src\build\windows\x64\runner\Release").Path
@@ -162,9 +166,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Inno Setup 编译失败（exit=$LASTEXITCODE）" }
 
       - name: 生成校验信息
-        shell: powershell
+        shell: pwsh
         run: |
           $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
           $exe = Get-ChildItem "fork\build\installer\FeiNiuMusic-v*-Windows-Setup.exe" | Select-Object -First 1
           if (-not $exe) { throw "未找到安装包产物" }
           $hash = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
@@ -194,7 +199,7 @@ jobs:
           path: dist
 
       - name: 发布到本仓库 Release
-        shell: powershell
+        shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.resolve.outputs.tag }}
@@ -202,6 +207,7 @@ jobs:
           COMMIT: ${{ needs.resolve.outputs.commit }}
         run: |
           $ErrorActionPreference = "Stop"
+          $PSNativeCommandUseErrorActionPreference = $false
           [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
           $repo = "${{ github.repository }}"
           $sha = (Get-Content "dist\installer.sha256" -Raw).Trim()
